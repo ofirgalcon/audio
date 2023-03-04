@@ -1,12 +1,15 @@
-#!/usr/local/munkireport/munkireport-python2
+#!/usr/local/munkireport/munkireport-python3
 # Author tuxudo
 
 import subprocess
 import os
 import plistlib
 import sys
+import platform
+import json
 
 sys.path.insert(0, '/usr/local/munki')
+sys.path.insert(0, '/usr/local/munkireport')
 
 from munkilib import FoundationPlist
 
@@ -19,7 +22,10 @@ def get_audio_info():
     (output, unused_error) = proc.communicate()
 
     try:
-        plist = plistlib.readPlistFromString(output)
+        try:
+            plist = plistlib.readPlistFromString(output)
+        except AttributeError as e:
+            plist = plistlib.loads(output)
         # system_profiler xml is an array
         sp_dict = plist[0]
         items = sp_dict['_items']
@@ -116,18 +122,24 @@ def main():
     # Skip manual check
     if len(sys.argv) > 1:
         if sys.argv[1] == 'manualcheck':
-            print 'Manual check: skipping'
+            print('Manual check: skipping')
             exit(0)
 
     # Set the encoding
-    reload(sys)
-    sys.setdefaultencoding('utf8')
+    # reload(sys)
+    # sys.setdefaultencoding('utf8')
 
     # Read in English localizations from SystemProfiler
     if os.path.isfile('/System/Library/SystemProfiler/SPAudioReporter.spreporter/Contents/Resources/en.lproj/Localizable.strings'):
         localization = FoundationPlist.readPlist('/System/Library/SystemProfiler/SPAudioReporter.spreporter/Contents/Resources/en.lproj/Localizable.strings')
     elif os.path.isfile('/System/Library/SystemProfiler/SPAudioReporter.spreporter/Contents/Resources/English.lproj/Localizable.strings'):
-        localization = FoundationPlist.readPlist('/System/Library/SystemProfiler/SPAudioReporter.spreporter/Contents/Resources/English.lproj/Localizable.strings')
+        localization_dict = FoundationPlist.readPlist('/System/Library/SystemProfiler/SPThunderboltReporter.spreporter/Contents/Resources/Localizable.loctable')
+        if "en" in localization_dict:
+            localization = localization_dict["en"]
+        elif "English" in localization_dict:
+            localization = localization_dict["English"]
+        else:
+             localization = {}
     else:
         localization = {}
 
@@ -137,9 +149,13 @@ def main():
     result = flatten_audio_info(info, localization)
 
     # Write audio results to cache
+    cachedir = '%s/cache' % os.path.dirname(os.path.realpath(__file__))
     output_plist = os.path.join(cachedir, 'audio.plist')
-    plistlib.writePlist(result, output_plist)
-#    print plistlib.writePlistToString(result)
+    try:
+        plistlib.writePlist(result, output_plist)
+    except:
+        with open(output_plist, 'wb') as fp:
+            plistlib.dump(result, fp, fmt=plistlib.FMT_XML)
 
 if __name__ == "__main__":
     main()
